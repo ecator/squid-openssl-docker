@@ -1,54 +1,45 @@
 # Squid OpenSSL - Docker
 
-Build image
-```bash
-bash scripts/build.sh
-```
+因为基于GnuTLS的squid的`tls-cert`加载证书的时候不能包含中间证书，照成有些客户端无法正确验证，所以需要用这个基于OpenSSL的squid，这样就可以加载中间证书了。
 
-Run container
-```bash
-# interactively
-docker run -p 3128:3128 --name squid local/squid
-# daemon
-docker run -d -p 3128:3128 --restart unless-stopped --name squid local/squid
-```
+# 基本使用
 
-You can map your custom config: `-v /path/to/main/config:/etc/squid/squid.conf`
-
-You can also map cache data: ` -v /path/to/data:/var/spool/squid`
-
-## Default config
-
-* SSL-Bump peaking (*no interception - just read target hostnames for filtering*)
-* Allow connections only from private IPv4 ranges and localhost
-* Allow connections to 80/443
-* Deny weak inbound and outbound ciphers
-* Deny connections to servers with bad certificates
-* Deny HTTP-Connect tunnels through proxy
-
-## Testing
-
-```bash
-http_proxy=http://127.0.0.1:3128 curl -v http://superstes.eu
-> TCP_MISS/301 478 GET http://superstes.eu/ - HIER_DIRECT/superstes.eu text/html
-
-https_proxy=http://127.0.0.1:3128 curl -v https://superstes.eu
-> NONE_NONE/200 0 CONNECT superstes.eu:443 - HIER_NONE/- -
-> TCP_TUNNEL/200 6178 CONNECT superstes.eu:443 - HIER_DIRECT/superstes.eu -
-```
-
-## Custom paths
-
-If you change paths at build-time you will at least also need to change them in the squid.conf file.
-
-## Logs
-The log-files are redirected to `docker logs` as done in the [ubuntu/squid](https://hub.docker.com/r/ubuntu/squid) image.
-
-So configure these log-file locations:
+如果想要基于https的代理可以在新建一个`conf.d`文件夹然后在里面增加一个`https.conf`文件：
 
 ```
-SQUID_DIR_LOG=/var/log/squid  # can be configured at build-time
-access_log /var/log/squid/access.log
-cache_log /var/log/squid/cache.log
-cache_store_log /var/log/squid/store.log
+https_port 9443 tls-cert=/path/to/cert/domain-fullchain.cer tls-key=/path/to/cert/domain.key
+http_access allow all
 ```
+
+然后创建`docker-compose.yml`如下：
+
+```yml
+services:
+  app:
+    image: ecat/squid-openssl
+    restart: always
+    ports:
+      - "9443:9443"
+    volumes:
+      - "./conf.d:/etc/squid/conf.d"
+      - "./log:/var/log/squid"
+      - "/path/to/cert:/path/to/cert:ro"
+```
+
+这样启动后就可以通过`https://domain:9433`进行基于https的代理了。
+
+> 可以通过`openssl s_client -connect domain:9443 -showcerts`命令查看ServerHello返回的证书。
+
+代理测速可以用curl命令：
+
+```sh
+curl -v --proxy https://domain:9433  https://www.baidu.com
+```
+
+如果代理加了验证可以加上`--proxy-user user:password`参数。
+
+
+# 参考
+
+- [Let's Encrypt certificate for client to Squid proxy encryption - Help - Let's Encrypt Community Support](https://community.letsencrypt.org/t/lets-encrypt-certificate-for-client-to-squid-proxy-encryption/206978/10)
+- [squid : http_port configuration directive](http://www.squid-cache.org/Doc/config/http_port/)

@@ -1,0 +1,34 @@
+name: Docker Build and Push
+
+on:
+  push:
+
+jobs:
+
+  build:
+
+    runs-on: ubuntu-latest
+    env:
+      TAG: "${{ secrets.DOCKERHUB_USERNAME }}/squid-openssl"
+    steps:
+    - uses: actions/checkout@v3
+    - name: Docker Login
+      uses: docker/login-action@v2.1.0
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+    - name: Build and push to latest
+      run: |
+          echo "github.ref_type: ${{ github.ref_type }}"
+          echo "github.ref_name: ${{ github.ref_name }}"
+          echo "TAG: $TAG"
+          docker build -t $TAG .
+          docker push $TAG
+    - name: Push to tag
+      if: ${{ github.ref_type == 'tag' }}
+      env:
+        TAGV: "${{ env.TAG }}:${{ github.ref_name }}"
+      run: |
+          echo "TAG: $TAG"
+          echo "TAGV: $TAGV"
+          docker tag $TAG $TAGV && docker push $TAGV
